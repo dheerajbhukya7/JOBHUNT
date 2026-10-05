@@ -1,266 +1,1203 @@
-# jobhunt
+# 🎯 JobHunt
 
-A personal job-search agent. It reads public ATS APIs every morning, throws away
-the ~99% that don't fit you, scores what's left against your resume, drafts an
-application kit for the best few, and emails you a digest.
+### Your personal AI job-search agent — built to find the right jobs, not apply to everything.
 
-**It never submits an application.** It finds, filters, ranks and drafts. You
-read the digest, edit the cover note, and press submit yourself.
+JobHunt is a **privacy-conscious, AI-powered job-search automation system** that checks public ATS job boards every morning, filters out irrelevant roles using deterministic rules, evaluates the remaining jobs against your profile, generates tailored application drafts, and sends a concise daily digest to your inbox.
 
+**It never submits an application.**
+
+You stay in control.
+
+```text
+                    JOBHUNT PIPELINE
+
+       Public ATS Boards
+              │
+              ▼
+       ┌──────────────┐
+       │   FETCH      │  Greenhouse / Lever / Ashby
+       └──────┬───────┘
+              │
+              ▼
+       ┌──────────────┐
+       │ PRE-FILTER   │  Title • Location • Freshness
+       │   $0 / LLM   │
+       └──────┬───────┘
+              │
+              ▼
+       ┌──────────────┐
+       │ AI SCREENING │  Resume ↔ Job Description
+       └──────┬───────┘
+              │
+              ▼
+       ┌──────────────┐
+       │ AI DRAFTING  │  Cover Note • Talking Points
+       └──────┬───────┘
+              │
+              ▼
+       ┌──────────────┐
+       │    DIGEST    │  Top opportunities
+       └──────┬───────┘
+              │
+              ▼
+          📧 YOUR INBOX
+              │
+              ▼
+       YOU REVIEW → YOU APPLY
 ```
-2000 postings  →  40 candidates  →  5 in your inbox
-   fetch          regex/location      LLM screen
-                  /freshness gate     + draft
-                  (free, no LLM)
+
+### The basic idea
+
+```text
+2,000 jobs
+    ↓
+   40 relevant
+    ↓
+    5 worth your time
+    ↓
+  1 daily digest
 ```
 
-> **New to Python?** Read **[SETUP.md](SETUP.md)** instead — it's a 13-step guide
-> that assumes you have nothing installed. This README assumes you're comfortable
-> with a terminal.
+Instead of spending hours searching job boards, JobHunt spends its time doing the boring work.
+
+You spend your time making decisions.
 
 ---
 
-## Run it in 30 seconds, no API key
+## ✨ Why JobHunt?
 
-```bash
-git clone <your-repo> && cd jobhunt
-python -m venv .venv && .venv/Scripts/activate      # Windows
-# python -m venv .venv && source .venv/bin/activate # macOS/Linux
-pip install -r requirements.txt
+Most job-search automation makes the wrong optimization:
 
-python -m jobhunt run --mock --scorer keyword
+> **"How many jobs can I apply to?"**
+
+JobHunt asks a different question:
+
+> **"Which jobs are actually worth applying to?"**
+
+The system deliberately separates **cheap deterministic filtering** from **expensive AI reasoning**.
+
+```text
+                    2,000 postings
+                         │
+                         ▼
+               ┌──────────────────┐
+               │ Deterministic    │
+               │ filtering        │
+               │                  │
+               │ Title            │
+               │ Location         │
+               │ Seniority        │
+               │ Freshness        │
+               └────────┬─────────┘
+                        │
+                        ▼
+                    ~40 jobs
+                        │
+                        ▼
+               ┌──────────────────┐
+               │ LLM screening    │
+               │                  │
+               │ Resume fit       │
+               │ Skills           │
+               │ Experience       │
+               │ Requirements     │
+               └────────┬─────────┘
+                        │
+                        ▼
+                     ~5 jobs
+                        │
+                        ▼
+               ┌──────────────────┐
+               │ LLM drafting     │
+               │                  │
+               │ Cover note       │
+               │ Talking points   │
+               │ Application kit │
+               └────────┬─────────┘
+                        │
+                        ▼
+                    📧 Digest
 ```
 
-`--mock` runs bundled fixtures through the **real parsers** — no network.
-`--scorer keyword` swaps the LLM for a dumb token-overlap stub, so the whole
-pipeline runs with no secrets configured. You should see:
+**The LLM never sees the 2,000 jobs.**
 
-```
-[2/5] filtering
-  prefilter: 12 -> 5 (dropped title=5 location=1 stale=1)
-[3/5] screening 5 jobs (keyword stub — DEV ONLY)
-  3 scored >= 7.0
-[5/5] digest
-  wrote out/digest.html
-
-funnel: 12 scanned -> 5 passed filters -> 5 new -> 3 in digest
-```
-
-Open `out/digest.html` in a browser. That's the email you'd have received.
-
-> The keyword scorer is **dev-only**. It cannot tell a Staff role from a
-> new-grad one and has no idea what the words mean. It exists to prove the
-> plumbing, never to build a digest you'd act on.
+That's the key design decision.
 
 ---
 
-## Set it up for real
+# 🚀 Features
 
-### 1. Point it at companies you'd actually join
+### 🔎 Multi-ATS job discovery
 
-Edit `companies.yaml`. The slug is the last path segment of a company's public
-careers board:
+JobHunt currently supports public job boards from:
 
-| Board URL | `ats` | `slug` |
-|---|---|---|
-| `boards.greenhouse.io/stripe` | `greenhouse` | `stripe` |
-| `jobs.lever.co/netlify` | `lever` | `netlify` |
-| `jobs.ashbyhq.com/ramp` | `ashby` | `ramp` |
+- Greenhouse
+- Lever
+- Ashby
 
-The shipped list is **examples** — verify each before trusting the output.
-Companies migrate between ATS vendors and slugs go dead. A dead slug prints an
-HTTP status and returns nothing; it never kills the run. Watch the per-board
-counts on stdout: a board reporting 0 every day is a slug that needs fixing.
+Each ATS has its own parser and its own quirks.
 
-Start with 10–15 companies. A list of 200 is mostly noise.
+The system normalizes everything into a common `Job` model.
 
-**No LinkedIn or Naukri.** Neither has a public API and scraping them violates
-their terms of service. The three ATS endpoints above are documented, unauthenticated,
-and intended to be read.
+---
 
-### 2. Tune the filters
+### ⚡ Zero-cost deterministic filtering
 
-`config.yaml` holds the deterministic gate that runs **before** any LLM call.
-This is the whole cost story — get it right and you spend cents a day.
+Before an LLM is called, jobs are filtered using:
+
+- Job title
+- Seniority
+- Location
+- Remote eligibility
+- Posting age
+- Function
+- Duplicate status
+
+Example:
 
 ```yaml
 filters:
-  include_titles: ['\bsde\b', 'software development engineer', ...]
-  exclude_titles: ['\b(staff|principal)\b', '\b(manager)\b', ...]
-  locations: [bangalore, bengaluru, india]
+  include_titles:
+    - '\bsde\b'
+    - 'software development engineer'
+    - 'machine learning engineer'
+    - 'ai engineer'
+    - 'data scientist'
+
+  exclude_titles:
+    - '\b(staff|principal)\b'
+    - '\b(manager|director)\b'
+    - '\bintern\b'
+    - '\bjunior\b'
+
+  locations:
+    - bangalore
+    - bengaluru
+    - hyderabad
+    - india
+
   allow_remote: true
   max_age_days: 30
+
 score_threshold: 7.0
 max_per_digest: 5
 ```
 
-> **`sde` does not match "Software Development Engineer".** They share no
-> substring. Use `\bsde\b` for the acronym *and* list the spelled-out variants
-> separately, or you'll silently miss half of Amazon-style postings. There's a
-> test pinning this.
+This stage uses **no LLM and costs nothing**.
 
-### 3. Build your profile
+---
+
+# 🧠 AI-Powered Job Screening
+
+Once the deterministic gate has done its job, the remaining opportunities are evaluated against your profile.
+
+The model considers things like:
+
+- Technical skills
+- Years of experience
+- Industry experience
+- Required technologies
+- Preferred technologies
+- Seniority
+- Location
+- Responsibilities
+- Career trajectory
+- Overall fit
+
+Instead of simply asking:
+
+> "Does this job contain Python?"
+
+JobHunt asks:
+
+> "Given this candidate's experience, how strong is the actual match?"
+
+Each job receives a structured score.
+
+```json
+{
+  "job_id": "greenhouse:example:12345",
+  "score": 8.7,
+  "recommendation": "strong_match",
+  "matched_skills": [
+    "Python",
+    "FastAPI",
+    "AWS",
+    "RAG",
+    "LLMs"
+  ],
+  "missing_skills": [
+    "Kubernetes"
+  ],
+  "reason": "Strong match for the core AI/ML requirements..."
+}
+```
+
+---
+
+# ✍️ Application Kit Generation
+
+For the best opportunities, JobHunt generates a small application kit.
+
+For example:
+
+```text
+┌─────────────────────────────────┐
+│        APPLICATION KIT          │
+├─────────────────────────────────┤
+│ Match Score:        9.1 / 10    │
+│                                 │
+│ Why this fits                  │
+│ ─────────────────────────────   │
+│ 3–5 concise reasons            │
+│                                 │
+│ Cover Note                     │
+│ ─────────────────────────────   │
+│ Tailored draft                  │
+│                                 │
+│ Talking Points                 │
+│ ─────────────────────────────   │
+│ 3–5 points for recruiter call  │
+│                                 │
+│ Potential Gaps                 │
+│ ─────────────────────────────   │
+│ Skills worth reviewing         │
+└─────────────────────────────────┘
+```
+
+The AI drafts.
+
+**You decide.**
+
+---
+
+# 📧 Daily Digest
+
+Instead of receiving dozens of alerts, you receive one focused digest.
+
+Example:
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        JOBHUNT DAILY DIGEST
+        Monday • 06 October
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5 opportunities found
+
+🥇 9.3  Senior AI Engineer
+    Company A • Hyderabad
+    Strong match
+
+🥈 8.9  Machine Learning Engineer
+    Company B • Bangalore
+    Strong match
+
+🥉 8.4  GenAI Engineer
+    Company C • Remote India
+    Good match
+
+──────────────────────────────────
+
+3 additional opportunities available
+
+[View Full Digest]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+No endless scrolling.
+
+No job-board spam.
+
+Just the opportunities worth investigating.
+
+---
+
+# 🔐 Human-in-the-Loop by Design
+
+JobHunt intentionally **does not auto-submit applications**.
+
+There is no:
+
+```text
+AI → Apply
+```
+
+Instead:
+
+```text
+AI → Find
+   → Filter
+   → Score
+   → Draft
+   → Notify
+          ↓
+       HUMAN
+          ↓
+        APPLY
+```
+
+This is deliberate.
+
+You review the job.
+
+You review the AI-generated content.
+
+You make the final decision.
+
+You press **Submit**.
+
+---
+
+# 🛠️ Supported Providers
+
+JobHunt uses a provider abstraction so the AI layer can be swapped without changing the rest of the application.
+
+| Provider | Environment Variable | PDF | Typical Use |
+|---|---|---:|---|
+| Anthropic | `ANTHROPIC_API_KEY` | ✅ | High-quality screening/drafting |
+| Google Gemini | `GEMINI_API_KEY` | ✅ | Cost-efficient |
+| Groq | `GROQ_API_KEY` | ❌ | Fast screening |
+| OpenAI-compatible | configurable | ❌ | OpenRouter / Together / vLLM |
+| Ollama | None | ❌ | Local/private inference |
+
+Screening and drafting can use different providers.
+
+For example:
 
 ```bash
-cp .env.example .env      # add ANTHROPIC_API_KEY
+LLM_PROVIDER=anthropic
+
+SCREEN_PROVIDER=groq
+DRAFT_PROVIDER=anthropic
+
+SCREEN_MODEL=<fast-screening-model>
+DRAFT_MODEL=<high-quality-drafting-model>
+```
+
+This lets you use:
+
+**cheap + fast model → screening**
+
+and
+
+**stronger model → final drafting**
+
+---
+
+# 💰 Cost Architecture
+
+The system is designed around one simple principle:
+
+> **Don't spend tokens deciding whether a job should have been filtered by a regex.**
+
+For example:
+
+```text
+2,000 jobs
+   │
+   │  No LLM
+   ▼
+  40 jobs
+   │
+   │  Cheap model
+   ▼
+  10 jobs
+   │
+   │  Strong model
+   ▼
+   5 jobs
+```
+
+With a tight configuration, the AI workload is tiny compared with the number of jobs initially discovered.
+
+You can also run screening through providers with free tiers or use Ollama locally.
+
+---
+
+# 🧪 Development Mode
+
+Want to try the complete system without API keys?
+
+Run:
+
+```bash
+python -m jobhunt run --mock --scorer keyword
+```
+
+The mock mode uses realistic ATS fixtures and exercises the **actual parser and pipeline code**.
+
+Example:
+
+```text
+[1/5] fetching
+      Greenhouse: 800
+      Lever:      650
+      Ashby:      550
+
+[2/5] filtering
+      prefilter: 2000 → 40
+      dropped:
+        title=1,420
+        location=310
+        stale=230
+
+[3/5] screening
+      40 jobs
+      11 scored >= 7.0
+
+[4/5] drafting
+      5 application kits
+
+[5/5] digest
+      wrote out/digest.html
+
+────────────────────────────────────
+FUNNEL
+
+2,000 scanned
+      ↓
+40 passed filters
+      ↓
+40 new
+      ↓
+11 strong matches
+      ↓
+5 in digest
+────────────────────────────────────
+```
+
+Open:
+
+```text
+out/digest.html
+```
+
+in your browser.
+
+No API key.
+
+No network.
+
+No money.
+
+---
+
+# ⚡ Quick Start
+
+## 1. Clone
+
+```bash
+git clone <your-repo>
+cd jobhunt
+```
+
+## 2. Create a virtual environment
+
+### Windows
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### macOS / Linux
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+## 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+## 4. Run the demo
+
+```bash
+python -m jobhunt run --mock --scorer keyword
+```
+
+You now have a working end-to-end job-search pipeline.
+
+---
+
+# 🎯 Configure Your Target Companies
+
+Edit:
+
+```text
+companies.yaml
+```
+
+Example:
+
+```yaml
+companies:
+
+  - name: Stripe
+    ats: greenhouse
+    slug: stripe
+
+  - name: Netlify
+    ats: lever
+    slug: netlify
+
+  - name: Ramp
+    ats: ashby
+    slug: ramp
+```
+
+The slug normally corresponds to the final part of the public careers URL.
+
+| Careers URL | ATS | Slug |
+|---|---|---|
+| `boards.greenhouse.io/stripe` | greenhouse | stripe |
+| `jobs.lever.co/netlify` | lever | netlify |
+| `jobs.ashbyhq.com/ramp` | ashby | ramp |
+
+Start with **10–15 companies**.
+
+More companies do not automatically mean better results.
+
+---
+
+# 👤 Build Your Candidate Profile
+
+Create your environment file:
+
+```bash
+cp .env.example .env
+```
+
+Then configure your provider.
+
+For example:
+
+```env
+ANTHROPIC_API_KEY=your_key_here
+```
+
+Build your profile:
+
+```bash
 python -m jobhunt profile --resume resume.pdf
 ```
 
-PDFs go over as a base64 document block (Anthropic and Gemini both read them
-natively — no OCR, no text extraction library). `.txt` and `.md` also work and
-are the fallback for providers that can't take documents.
+JobHunt sends the resume to the configured provider and creates:
 
-This writes `profile.json`. It's gitignored — read it, fix anything the model
-got wrong, and keep it out of version control.
+```text
+profile.json
+```
 
-### 4. Run it
+Example:
+
+```json
+{
+  "summary": "...",
+  "years_experience": 5,
+  "skills": [
+    "Python",
+    "Machine Learning",
+    "Generative AI",
+    "RAG",
+    "FastAPI",
+    "AWS"
+  ],
+  "target_roles": [
+    "AI Engineer",
+    "ML Engineer",
+    "GenAI Engineer"
+  ],
+  "target_locations": [
+    "Hyderabad",
+    "Bangalore",
+    "Remote India"
+  ]
+}
+```
+
+**Always review this file before using it.**
+
+It is gitignored because it contains personal information.
+
+---
+
+# ▶️ Run the Agent
+
+Build a digest:
 
 ```bash
-python -m jobhunt run                    # build the digest
-python -m jobhunt run --send             # ...and email it
-python -m jobhunt run --limit 10         # cost guard while tuning
-python -m jobhunt run --no-draft         # screen only, skip the expensive pass
+python -m jobhunt run
+```
+
+Build and send the email:
+
+```bash
+python -m jobhunt run --send
+```
+
+Limit the number of jobs while testing:
+
+```bash
+python -m jobhunt run --limit 10
+```
+
+Skip application drafting:
+
+```bash
+python -m jobhunt run --no-draft
 ```
 
 ---
 
-## Picking providers
+# 📊 Job Tracking
 
-Screening reads hundreds of jobs and wants the cheapest decent model. Drafting
-runs ~5 times and wants the best one. So they're configured separately:
+JobHunt maintains a local job index:
 
-```bash
-LLM_PROVIDER=anthropic          # sets both stages
-SCREEN_PROVIDER=groq            # ...override per stage
-DRAFT_PROVIDER=anthropic
-SCREEN_MODEL=claude-haiku-4-5-20251001
-DRAFT_MODEL=claude-sonnet-5
+```text
+seen.json
 ```
 
-| Provider | Value | Key | PDF resumes | Notes |
-|---|---|---|---|---|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | yes | default; uses the official SDK |
-| Google Gemini | `gemini` | `GEMINI_API_KEY` | yes | generous free tier |
-| Groq | `groq` | `GROQ_API_KEY` | no | very fast, free tier |
-| OpenAI-compatible | `openai-compatible` | `GROQ_API_KEY` + `LLM_BASE_URL` | no | Together, OpenRouter, vLLM |
-| Ollama | `ollama` | none | no | fully local, `OLLAMA_HOST` |
+This prevents the same opportunity from appearing repeatedly.
 
-Everything except Anthropic goes over plain `requests`, so you can delete the
-`anthropic` line from `requirements.txt` and still run the whole thing.
+Mark a job as applied:
 
-Adding a provider is one class in [`jobhunt/providers.py`](jobhunt/providers.py)
-with a `complete()` method, plus an entry in the `PROVIDERS` dict.
+```bash
+python -m jobhunt applied "greenhouse:stripe:5501001"
+```
+
+View statistics:
+
+```bash
+python -m jobhunt stats
+```
+
+Export:
+
+```text
+out/tracker.csv
+```
+
+You can open the CSV in Excel or Google Sheets.
 
 ---
 
-## Tracking
+# ⏰ Automation
 
-`seen.json` is both the dedupe index and the application tracker — a job you've
-already been shown is never shown again. It's gitignored: it's yours, and
-shipping one would break the first run for anyone who cloned the repo.
+The repository includes:
 
-```bash
-python -m jobhunt applied "greenhouse:stripe:5501001"   # id is in the digest
-python -m jobhunt stats                                 # + CSV export
+```text
+.github/workflows/daily.yml
 ```
 
-`out/tracker.csv` opens in any spreadsheet.
+The workflow can run the agent automatically on weekdays.
+
+Conceptually:
+
+```text
+06:00 IST
+   │
+   ▼
+GitHub Actions
+   │
+   ├── Fetch ATS boards
+   ├── Filter jobs
+   ├── Screen matches
+   ├── Draft application kits
+   ├── Generate digest
+   └── Email candidate
+```
+
+The workflow carries `seen.json` between runs using GitHub Actions cache.
+
+Personal state is **not committed to the repository**.
 
 ---
 
-## Scheduling
+# 🔑 GitHub Secrets
 
-[`.github/workflows/daily.yml`](.github/workflows/daily.yml) runs it at 06:00 IST
-on weekdays. `seen.json` is carried between runs with `actions/cache`, not
-committed — it's personal, and a `seen.json` in the repo would mark every job as
-already-seen for anyone who cloned it. Nothing personal ever enters git.
+Configure the following repository secrets:
 
-Repository **secrets** to set (Settings → Secrets and variables → Actions):
-
-| Secret | What |
+| Secret | Purpose |
 |---|---|
-| `PROFILE_JSON` | the entire contents of your local `profile.json` |
-| `ANTHROPIC_API_KEY` | (or `GEMINI_API_KEY` / `GROQ_API_KEY`) |
-| `SMTP_USER` / `SMTP_PASS` | Gmail address + **App Password**, not your login |
-| `MAIL_TO` | where the digest goes |
+| `PROFILE_JSON` | Candidate profile |
+| `ANTHROPIC_API_KEY` | Anthropic provider |
+| `GEMINI_API_KEY` | Gemini provider |
+| `GROQ_API_KEY` | Groq provider |
+| `SMTP_USER` | Email account |
+| `SMTP_PASS` | Gmail App Password |
+| `MAIL_TO` | Digest recipient |
 
-Optional repository **variables**: `LLM_PROVIDER`, `SCREEN_PROVIDER`,
-`DRAFT_PROVIDER`, `SCREEN_MODEL`, `DRAFT_MODEL`.
+Only configure the provider you actually use.
 
-Trigger it by hand first — Actions → *daily job digest* → *Run workflow*, with
-`dry_run` ticked to build the digest artifact without emailing.
-
-Gmail needs an [App Password](https://myaccount.google.com/apppasswords); your
-normal password stops working once 2FA is on.
+For Gmail, use an **App Password**, not your normal account password.
 
 ---
 
-## Layout
+# 🏗️ Architecture
 
-```
+```text
 jobhunt/
-  fetch.py       Job dataclass, strip_html, 3 pure parsers, fetch_all
-  prefilter.py   title/location/freshness gate — no LLM, no cost
-  providers.py   the swappable provider interface + 5 backends
-  llm.py         screen() / draft() / build_profile() / keyword stub
-  digest.py      HTML email (inline CSS only — Gmail strips <style>)
-  mailer.py      SMTP
-  store.py       seen.json dedupe + tracker + CSV export
-  mock.py        fixtures in each ATS's native JSON shape
-  cli.py         argparse: profile / run / applied / stats
-config.yaml      filters, thresholds, paths
-companies.yaml   boards to poll
-tests/           55 tests, no network, no key
+│
+├── jobhunt/
+│   │
+│   ├── fetch.py
+│   │     └── ATS clients + Job model
+│   │
+│   ├── prefilter.py
+│   │     └── deterministic filtering
+│   │
+│   ├── providers.py
+│   │     └── LLM provider abstraction
+│   │
+│   ├── llm.py
+│   │     ├── screen()
+│   │     ├── draft()
+│   │     ├── build_profile()
+│   │     └── keyword_stub()
+│   │
+│   ├── digest.py
+│   │     └── HTML email generation
+│   │
+│   ├── mailer.py
+│   │     └── SMTP delivery
+│   │
+│   ├── store.py
+│   │     ├── deduplication
+│   │     ├── tracking
+│   │     └── CSV export
+│   │
+│   ├── mock.py
+│   │     └── ATS fixtures
+│   │
+│   └── cli.py
+│         └── command-line interface
+│
+├── tests/
+│
+├── companies.yaml
+├── config.yaml
+├── requirements.txt
+├── .env.example
+├── README.md
+└── .github/
+    └── workflows/
+        └── daily.yml
 ```
-
-HTTP is kept out of the parsers on purpose. Each `parse_*(slug, company, body)`
-takes already-decoded JSON and returns `list[Job]`, which is what makes `--mock`
-exercise the real code path instead of a parallel implementation.
-
-Every job gets `job_id = "{ats}:{slug}:{id}"` — globally unique, so the same
-role posted on two boards is still two rows, and a re-run never duplicates.
-
-### ATS quirks the parsers handle
-
-- **Greenhouse** — `content` is HTML-entity-escaped HTML. Unescape *before*
-  stripping tags and again after, or you ship `&amp;` into the prompt.
-- **Lever** — `createdAt` is epoch **milliseconds**. The full JD is split across
-  `descriptionPlain` **+** `lists[].text` **+** `lists[].content` **+**
-  `additionalPlain`; concatenate all four or you lose the requirements section
-  and every job looks unqualified.
-- **Ashby** — skip `isListed: false`; those are unpublished drafts.
 
 ---
 
-## Tests
+# 🧩 Clean Parser Architecture
+
+One important design principle:
+
+**HTTP is separate from parsing.**
+
+Instead of:
+
+```text
+HTTP request
+   ↓
+Parser
+   ↓
+Job
+```
+
+the system uses:
+
+```text
+HTTP
+ ↓
+Decoded JSON
+ ↓
+Parser
+ ↓
+Job objects
+```
+
+For example:
+
+```python
+parse_greenhouse(slug, company, body)
+parse_lever(slug, company, body)
+parse_ashby(slug, company, body)
+```
+
+Each parser accepts already-decoded JSON and returns:
+
+```python
+list[Job]
+```
+
+This makes the parsers:
+
+- deterministic
+- testable
+- easy to mock
+- independent of networking
+- safe to regression-test
+
+---
+
+# 🧠 ATS Quirks
+
+Real-world APIs are messy.
+
+JobHunt explicitly handles several common ATS differences.
+
+### Greenhouse
+
+Greenhouse descriptions can contain HTML entities.
+
+The parser therefore:
+
+```text
+HTML entities
+      ↓
+unescape
+      ↓
+strip HTML
+      ↓
+unescape again
+      ↓
+clean text
+```
+
+This prevents things like:
+
+```text
+&amp;
+```
+
+from leaking into the LLM prompt.
+
+---
+
+### Lever
+
+Lever timestamps use:
+
+```text
+epoch milliseconds
+```
+
+not normal Python seconds.
+
+Lever job descriptions can also be distributed across:
+
+```text
+descriptionPlain
+lists[].text
+lists[].content
+additionalPlain
+```
+
+All relevant fields are combined before screening.
+
+---
+
+### Ashby
+
+Ashby can contain unpublished jobs.
+
+The parser ignores:
+
+```json
+{
+  "isListed": false
+}
+```
+
+so draft/unpublished positions never enter the pipeline.
+
+---
+
+# 🧪 Testing
+
+Run:
 
 ```bash
 python -m pytest tests -q
 ```
 
-No network, no API key, no cost. The suite covers:
+The test suite requires:
 
-- each parser against fixtures in its **native** ATS shape
-- the two bugs that cost me an evening each: Lever's epoch-ms timestamps
-  (fixture dates are generated relative to *now*, never hardcoded, so they
-  can't silently age past the freshness gate) and the `\bsde\b` regex
-- prefilter rejects the planted junk: wrong seniority, wrong city, wrong
-  function, a stale posting, an unlisted Ashby draft
-- the LLM layer with the provider stubbed: batching splits at the configured
-  size, JD truncation is applied before send, fenced/preamble/object-or-array
-  JSON all parse, scores land on the right job when returned out of order, a
-  failed batch warns and the run continues, and the draft kit always has every
-  key the digest renders
+- no API key
+- no network
+- no external services
+
+Tests cover:
+
+- Greenhouse parsing
+- Lever parsing
+- Ashby parsing
+- HTML cleanup
+- timestamp conversion
+- title filtering
+- location filtering
+- freshness filtering
+- seniority filtering
+- deduplication
+- unpublished Ashby jobs
+- LLM batching
+- JSON parsing
+- malformed LLM responses
+- out-of-order results
+- failed batches
+- JD truncation
+- draft generation
 
 ---
 
-## Cost
+# 🐛 One Tiny Regex That Can Cost You Hundreds of Jobs
 
-With ~15 boards, a tight `config.yaml`, Haiku screening and Sonnet drafting,
-this lands in the low single-digit rupees per day. The prefilter is what makes
-that true: nothing reaches a model until it has already passed title, location
-and freshness. Set `SCREEN_PROVIDER=groq` or `gemini` and it's free.
+This is surprisingly important.
 
-Use `--limit` while tuning filters so a bad regex can't run up a bill.
-#   J O B H U N T  
- 
+Don't write:
+
+```regex
+sde
+```
+
+and assume it means:
+
+```text
+Software Development Engineer
+```
+
+It doesn't.
+
+Instead, explicitly support:
+
+```yaml
+include_titles:
+  - '\bsde\b'
+  - 'software development engineer'
+```
+
+The test suite pins this behavior so a future configuration change doesn't silently destroy your job funnel.
+
+---
+
+# 🔄 Idempotency & Deduplication
+
+Every job receives a globally unique identifier:
+
+```text
+{ats}:{slug}:{id}
+```
+
+Example:
+
+```text
+greenhouse:stripe:5501001
+```
+
+This means rerunning the pipeline doesn't repeatedly show the same job.
+
+The system maintains:
+
+```text
+seen.json
+```
+
+which acts as both:
+
+- deduplication index
+- lightweight application tracker
+
+---
+
+# 🛡️ Privacy & Safety
+
+JobHunt is intentionally conservative.
+
+### It does NOT:
+
+❌ submit applications  
+❌ automate CAPTCHA solving  
+❌ scrape LinkedIn  
+❌ scrape Naukri  
+❌ impersonate the candidate  
+❌ automatically send recruiter messages  
+❌ commit your resume/profile to Git  
+❌ automatically make career decisions  
+
+### It DOES:
+
+✅ read public ATS job data  
+✅ filter opportunities  
+✅ score candidate-job fit  
+✅ draft application material  
+✅ track what you've already seen  
+✅ send you a digest  
+
+The final decision always stays with the candidate.
+
+---
+
+# 🌐 Why No LinkedIn or Naukri?
+
+JobHunt is deliberately built around public ATS endpoints rather than scraping sites that don't provide an appropriate public API for this use case.
+
+Supported sources are:
+
+```text
+Greenhouse
+Lever
+Ashby
+```
+
+This keeps the ingestion layer simpler and reduces dependence on fragile scraping techniques.
+
+---
+
+# 🗺️ Roadmap
+
+JobHunt can evolve considerably without changing its core architecture.
+
+### Phase 1 — Foundation
+
+- [x] Greenhouse ingestion
+- [x] Lever ingestion
+- [x] Ashby ingestion
+- [x] Deterministic filtering
+- [x] Resume profile
+- [x] LLM screening
+- [x] Application drafting
+- [x] HTML digest
+- [x] Job deduplication
+
+### Phase 2 — Intelligence
+
+- [ ] Semantic job matching
+- [ ] Skill-gap detection
+- [ ] Company preference scoring
+- [ ] Career-growth scoring
+- [ ] Salary-aware ranking
+- [ ] Remote-work scoring
+- [ ] Recruiter/contact extraction
+- [ ] Personalized ranking history
+
+### Phase 3 — Analytics
+
+```text
+Jobs discovered
+       ↓
+Jobs shortlisted
+       ↓
+Applications submitted
+       ↓
+Recruiter responses
+       ↓
+Interviews
+       ↓
+Offers
+```
+
+Track conversion rates across:
+
+- companies
+- roles
+- skills
+- locations
+- salary ranges
+- application sources
+
+Eventually, the system can learn:
+
+> "Which types of jobs actually produce interviews for this candidate?"
+
+That's much more valuable than simply finding more jobs.
+
+---
+
+# 💡 The Bigger Idea
+
+JobHunt isn't really a job scraper.
+
+It's a **personal opportunity-ranking engine**.
+
+The interesting part isn't fetching jobs.
+
+Fetching jobs is easy.
+
+The interesting part is progressively reducing uncertainty:
+
+```text
+                    JOB UNIVERSE
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Is it relevant? │
+                └────────┬────────┘
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Is it fresh?    │
+                └────────┬────────┘
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Am I qualified? │
+                └────────┬────────┘
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Is it a strong  │
+                │ career move?    │
+                └────────┬────────┘
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Is it worth my  │
+                │ time today?     │
+                └────────┬────────┘
+                         │
+                         ▼
+                    TOP 5 JOBS
+                         │
+                         ▼
+                       YOU
+```
+
+The goal isn't:
+
+> **Apply to 500 jobs.**
+
+The goal is:
+
+> **Find the 5 jobs you would have regretted missing.**
+
+---
+
+# ⭐ Project Philosophy
+
+```text
+Automation should remove repetition,
+not remove judgment.
+```
+
+JobHunt automates the boring parts.
+
+You keep the important parts.
+
+**Find intelligently.  
+Filter ruthlessly.  
+Rank objectively.  
+Draft quickly.  
+Decide yourself.**
+
+---
+
+## License
+
+Add your preferred license here.
+
+---
+
+## Built for people who would rather spend 30 minutes applying to 5 excellent opportunities than spend 5 hours applying to 100 random ones.
