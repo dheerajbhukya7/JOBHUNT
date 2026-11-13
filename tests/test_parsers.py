@@ -23,7 +23,22 @@ from jobhunt.prefilter import prefilter
 
 CONFIG = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml")
                         .read_text(encoding="utf-8"))
-FILTERS = CONFIG["filters"]
+AI_FILTERS = CONFIG["filters"]
+# The historical ATS fixtures exercise general software engineering roles.
+# Keep their test policy independent of the user's narrower production policy.
+FILTERS = {
+    "include_titles": [
+        r"\bsoftware engineer\b",
+        r"\bsoftware development engineer\b",
+        r"\bbackend engineer\b",
+        r"\bsite reliability engineer\b",
+        r"\bsde\b",
+    ],
+    "exclude_titles": [r"\b(staff|principal|senior|manager|director|lead)\b"],
+    "locations": ["hyderabad", "bangalore", "bengaluru", "india"],
+    "allow_remote": True,
+    "max_age_days": 30,
+}
 
 
 # ------------------------------------------------------------- strip_html ---
@@ -186,3 +201,26 @@ def test_allow_remote_is_what_lets_an_out_of_region_remote_role_through():
 def test_empty_filters_keep_everything():
     jobs = fetch_all_mock()
     assert len(prefilter(jobs, {})) == len(jobs)
+
+
+@pytest.mark.parametrize("title", [
+    "AI Engineer", "Machine Learning Engineer", "Software Engineer, AI",
+    "LLM Engineer", "MLOps Engineer", "Python Backend Engineer",
+    "Senior Generative AI Engineer",
+])
+def test_production_ai_policy_accepts_relevant_titles(title):
+    from jobhunt.fetch import Job
+    job = Job(job_id="lever:x:ai", ats="lever", company="X", title=title,
+              location="Hyderabad, India", url="https://example.com", description="AI")
+    assert prefilter([job], AI_FILTERS) == [job]
+
+
+@pytest.mark.parametrize("title", [
+    "Software Engineer II, Distributed Systems", "Backend Engineer (Go)",
+    "SDE II", "Staff AI Engineer", "AI Engineering Manager", "Frontend AI Engineer",
+])
+def test_production_ai_policy_rejects_unrelated_or_excluded_titles(title):
+    from jobhunt.fetch import Job
+    job = Job(job_id="lever:x:other", ats="lever", company="X", title=title,
+              location="Hyderabad, India", url="https://example.com", description="AI")
+    assert prefilter([job], AI_FILTERS) == []
