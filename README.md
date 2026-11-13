@@ -1201,3 +1201,9 @@ Add your preferred license here.
 ---
 
 ## Built for people who would rather spend 30 minutes applying to 5 excellent opportunities than spend 5 hours applying to 100 random ones.
+
+## Repository overview
+
+Human-reviewed AI job-search agent for ATS discovery, resume matching, screening and daily email digests.
+
+**Suggested GitHub topics:** `ai-agents` `job-search` `python` `llm` `automation` `ats` `github-actions`.
